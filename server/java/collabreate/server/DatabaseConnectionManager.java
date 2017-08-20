@@ -388,7 +388,7 @@ public class DatabaseConnectionManager extends ConnectionManagerBase {
             c.setHash(rs.getString(2));
             c.setGpid(rs.getString(3));
             if (rs.getInt(10) == c.getUid()) { //project owner gets full perms, regardless of user, project, or requested perms
-               logln("Project Owner joined! yay!", LINFO3);
+               logln("Project Owner joined! yay! 11", LINFO1);
                c.setPub(FULL_PERMISSIONS);
                c.setSub(FULL_PERMISSIONS);
             }

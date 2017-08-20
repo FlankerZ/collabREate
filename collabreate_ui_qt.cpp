@@ -45,6 +45,7 @@ using namespace QT;
 QWidget *mainWindow;
 
 static CollabLayout *cform;
+static CollabChatLayout *cformChat;
 
 //global pointer to the incoming project list buffer.  Used to fill
 //the project list dialog
@@ -471,11 +472,22 @@ void CollabLayout::append(const QString &label) {
    list->addItem(label);
 }
 
-void CollabLayout::processEdit() {
+void CollabChatLayout::append(const char *line) {
+    append(QString(line));
+}
+
+void CollabChatLayout::append(const QString &label) {
+    list->addItem(label);
+}
+
+void CollabChatLayout::processEdit() 
+{
 //   append(input->text());
-   if (input->text().length() == 0) {
+   if (input->text().length() == 0) 
+   {
       return;
    }
+
    QByteArray bytes = input->text().toAscii();
    char *d = bytes.data();
    char *end = strrchr(d, '\n');
@@ -485,62 +497,97 @@ void CollabLayout::processEdit() {
    uint32_t len = strlen(d) + strlen(username) + 20;
    char *line = new char[len];
    ::qsnprintf(line, len, "< %s> %s", username, d);
-   postCollabMessage(line);
+
+   postCollabChatMessage(line);
+
    delete [] line;
+
    do_send_user_message(d);
+
    input->clear();
 }
 
-CollabLayout::CollabLayout() : QVBoxLayout() {
+CollabLayout::CollabLayout() : QVBoxLayout() 
+{
    list = new QListWidget();
-   input = new QLineEdit();
+   //input = new QLineEdit();
    addWidget(list);
-   addWidget(input);
+   //addWidget(input);
 
    setSpacing(2);
    setContentsMargins(4, 4, 4, 4);
    
-   connect(input, SIGNAL(editingFinished()), this, SLOT(processEdit()));
+   //connect(input, SIGNAL(editingFinished()), this, SLOT(processEdit()));
    
    idaview = find_tform("IDA View-A");
-
 }
 
-int idaapi ui_collab(void *user_data, int notification_code, va_list va) {
-   if (notification_code == ui_tform_visible) {
+
+CollabChatLayout::CollabChatLayout() : QVBoxLayout() 
+{
+    list = new QListWidget();
+    input = new QLineEdit();
+    addWidget(list);
+    addWidget(input);
+
+    setSpacing(2);
+    setContentsMargins(4, 4, 4, 4);
+
+    connect(input, SIGNAL(editingFinished()), this, SLOT(processEdit()));
+
+    idaview = find_tform("IDA View-A");
+}
+
+
+int idaapi ui_collab(void *user_data, int notification_code, va_list va) 
+{
+   if (notification_code == ui_tform_visible) 
+   {
       TForm *form = va_arg(va, TForm *);
-      if (form == user_data) {
+
+      if (form == user_data) 
+      {
          QWidget *w = (QWidget *)form;
          cform = new CollabLayout();
          w->setLayout(cform);
          msg("CollabREate form is visible\n");
          switchto_tform(cform->idaview, true);
-         if (msgHistory == NULL) {
+         
+         if (msgHistory == NULL) 
+         {
             uint32_t sz = cnn.blobsize(1, COLLABREATE_MSGHISTORY_TAG);
-            if (sz > 0) {
+            if (sz > 0) 
+            {
                msgHistory = new Buffer(cnn.getblob(NULL, (size_t*)&sz, 1, COLLABREATE_MSGHISTORY_TAG), sz, false);
+               
                char *str;
-               while ((str = msgHistory->readUTF8()) != NULL) {
+               while ((str = msgHistory->readUTF8()) != NULL) 
+               {
                   cform->append(str);
                   qfree(str);
                }
                msgHistory->reset_error();
             }
-            else {
+            else 
+            {
                msgHistory = new Buffer();
             }
          }
       }
    }
-   else if (notification_code == ui_tform_invisible) {
+   else if (notification_code == ui_tform_invisible) 
+   {
       TForm *form = va_arg(va, TForm *);
-      if (form == user_data) {
+      if (form == user_data) 
+      {
          // user defined form is closed, destroy its controls
          // (to be implemented)
          msg("CollabREate form is closed\n");
          unhook_from_notification_point(HT_UI, ui_collab);
+
          cform = NULL;
-         if (msgHistory != NULL) {
+         if (msgHistory != NULL) 
+         {
             cnn.setblob(msgHistory->get_buf(), msgHistory->size(), 1, COLLABREATE_MSGHISTORY_TAG);
             delete msgHistory;
             msgHistory = NULL;
@@ -550,18 +597,102 @@ int idaapi ui_collab(void *user_data, int notification_code, va_list va) {
    return 0;
 }
 
+
+
+int idaapi ui_collabChat(void *user_data, int notification_code, va_list va) 
+{
+   if (notification_code == ui_tform_visible) 
+   {
+      TForm *form = va_arg(va, TForm *);
+      
+      if (form == user_data) 
+      {
+         QWidget *w = (QWidget *)form;
+         cformChat = new CollabChatLayout();
+         w->setLayout(cformChat);
+         
+         msg("CollabChat form is visible\n");
+         
+         switchto_tform(cformChat->idaview, true);
+         
+//          if (msgHistory == NULL) 
+//          {
+//             uint32_t sz = cnn.blobsize(1, COLLABREATE_MSGHISTORY_TAG);
+//             if (sz > 0) 
+//             {
+//                msgHistory = new Buffer(cnn.getblob(NULL, (size_t*)&sz, 1, COLLABREATE_MSGHISTORY_TAG), sz, false);
+//                char *str;
+//                
+//                while ((str = msgHistory->readUTF8()) != NULL) 
+//                {
+//                   cformChat->append(str);
+//                   qfree(str);
+//                }
+//                msgHistory->reset_error();
+//             }
+//             else 
+//             {
+//                msgHistory = new Buffer();
+//             }
+//          }
+      }
+   }
+   else if (notification_code == ui_tform_invisible) 
+   {
+      TForm *form = va_arg(va, TForm *);
+      if (form == user_data) 
+      {
+         // user defined form is closed, destroy its controls
+         // (to be implemented)
+         msg("CollabChat form is closed\n");
+         
+         unhook_from_notification_point(HT_UI, ui_collabChat);
+         
+         cformChat = NULL;
+//          if (msgHistory != NULL) 
+//          {
+//             cnn.setblob(msgHistory->get_buf(), msgHistory->size(), 1, COLLABREATE_MSGHISTORY_TAG);
+//             delete msgHistory;
+//             msgHistory = NULL;
+//          }
+      }
+   }
+   return 0;
+}
+
 #ifndef FORM_MDI
 #define FORM_MDI 0
 #endif
 
-void createCollabStatus() {
+void createCollabChat() 
+{
    HWND hwnd = NULL;
-   TForm *form = create_tform("CollabREate", &hwnd);
-   if (hwnd != NULL) {
-      hook_to_notification_point(HT_UI, ui_collab, form);
+   TForm *form = create_tform("CollabChat", &hwnd);
+   
+   if (hwnd != NULL) 
+   {
+      hook_to_notification_point(HT_UI, ui_collabChat, form);
       open_tform(form, FORM_MDI|FORM_TAB|FORM_MENU|FORM_RESTORE|FORM_QWIDGET);
    }
-   else {
+   else 
+   {
+      close_tform(form, FORM_SAVE);
+   }
+}
+
+
+
+void createCollabStatus() 
+{
+   HWND hwnd = NULL;
+   TForm *form = create_tform("CollabREate", &hwnd);
+   if (hwnd != NULL) 
+   {
+      hook_to_notification_point(HT_UI, ui_collab, form);
+      open_tform(form, FORM_TAB|FORM_MENU|FORM_RESTORE|FORM_QWIDGET);
+   }
+   else 
+   {
       close_tform(form, FORM_SAVE);
    }
 }
@@ -576,7 +707,9 @@ static const char *months[] = {
    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
 };
 
-void postCollabMessage(const char *message, time_t t) {
+
+void postCollabMessage(const char *message, time_t t) 
+{
    static time_t last = 0;
    //get local time to prepend to message
    if (t == 0) {
@@ -586,7 +719,8 @@ void postCollabMessage(const char *message, time_t t) {
    last = t;
    tm *lt = localtime(&t);
    char change[80];
-   if (!same) {
+   if (!same) 
+   {
       ::qsnprintf(change, sizeof(change), "Day changed to %02d %s %4d", lt->tm_mday, months[lt->tm_mon], lt->tm_year + 1900); 
       if (msgHistory != NULL) {
          msgHistory->writeUTF8(change);
@@ -595,20 +729,78 @@ void postCollabMessage(const char *message, time_t t) {
    uint32_t len = 16 + strlen(message);
    char *m = new char[len];
    ::qsnprintf(m, len, "%02d:%02d %s", lt->tm_hour, lt->tm_min, message);
-   if (msgHistory != NULL) {
+
+   if (msgHistory != NULL) 
+   {
       msgHistory->writeUTF8(m);
    }
-   if (cform) {
-      if (!same) {
+   if (cform) 
+   {
+      if (!same) 
+      {
          cform->append(change);
       }
       cform->append(m);
    }
-   else {
-      if (!same) {
+   else 
+   {
+      if (!same) 
+      {
          msg("%s\n", change);
       }
       msg("%s\n", m);
    }
    delete [] m;
 }
+
+
+void postCollabChatMessage(const char *message, time_t t) 
+{
+   static time_t last = 0;
+   
+   //get local time to prepend to message
+   if (t == 0) 
+   {
+      time(&t);
+   }
+   
+   bool same = sameDay(last, t);
+   last = t;
+   tm *lt = localtime(&t);
+   char change[80];
+   
+   if (!same) 
+   {
+      ::qsnprintf(change, sizeof(change), "Day changed to %02d %s %4d", lt->tm_mday, months[lt->tm_mon], lt->tm_year + 1900); 
+//       if (msgHistory != NULL) 
+//       {
+//          msgHistory->writeUTF8(change);
+//       }
+   }
+   uint32_t len = 16 + strlen(message);
+   char *m = new char[len];
+   
+   ::qsnprintf(m, len, "%02d:%02d %s", lt->tm_hour, lt->tm_min, message);
+//    if (msgHistory != NULL) 
+//    {
+//       msgHistory->writeUTF8(m);
+//    }
+   if (cformChat) 
+   {
+      if (!same) 
+      {
+         cformChat->append(change);
+      }
+      cformChat->append(m);
+   }
+   else 
+   {
+      if (!same) 
+      {
+         msg("%s\n", change);
+      }
+      msg("%s\n", m);
+   }
+   delete [] m;
+}
+

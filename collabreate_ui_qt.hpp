@@ -55,6 +55,7 @@ void do_set_req_perms(void);
 void do_set_proj_perms(void);
 
 void createCollabStatus();
+void createCollabChat();
 
 extern QWidget *mainWindow;
 
@@ -154,12 +155,29 @@ public:
 
    TForm *idaview;
    
-private slots:
-   void processEdit();  
+private slots: 
    
 private:
    QListWidget *list;
-   QLineEdit *input;
+};
+
+
+class CollabChatLayout : public QVBoxLayout {
+    Q_OBJECT
+
+public:
+    CollabChatLayout();
+    void append(const char *line);  
+    void append(const QString &label);
+
+    TForm *idaview;
+
+    private slots:
+        void processEdit();  
+
+private:
+    QListWidget *list;
+    QLineEdit *input;
 
 };
 

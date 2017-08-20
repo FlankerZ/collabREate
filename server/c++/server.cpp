@@ -36,6 +36,7 @@
 #include <err.h>
 #include <errno.h>
 #include <pthread.h>
+#include <unistd.h>
 
 #include "utils.h"
 #include "db_support.h"
@@ -111,8 +112,10 @@ int drop_privs(struct passwd *pw) {
    dir = pw->pw_dir;
 #endif
    initgroups(pw->pw_name, pw->pw_gid);
-   if (setresgid(pw->pw_gid, pw->pw_gid, pw->pw_gid) < 0) return -1;
-   if (setresuid(pw->pw_uid, pw->pw_uid, pw->pw_uid) < 0) return -1;
+   
+   //if (setresgid(pw->pw_gid, pw->pw_gid, pw->pw_gid) < 0) return -1;
+   //if (setresuid(pw->pw_uid, pw->pw_uid, pw->pw_uid) < 0) return -1;
+   
    if (pw->pw_gid != gid && (setgid(gid) != -1 || setegid(gid) != -1)) {
 #ifdef DEBUG      
       printf(ERROR_BAD_GID, getgid(), pw->pw_gid);

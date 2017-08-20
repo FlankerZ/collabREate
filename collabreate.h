@@ -35,6 +35,9 @@
 #endif
 
 #include <time.h>
+#include <Windows.h>
+
+extern BOOL g_bIsRebasing;
 
 #define NO_OBSOLETE_FUNCS
 #define USE_DANGEROUS_FUNCTIONS
@@ -165,6 +168,7 @@ extern Buffer *changeCache;
 #define COLLABREATE_STRUCTS_TAG 'T'
 #define COLLABREATE_MSGHISTORY_TAG ((char)0x81)
 #define COLLABREATE_CACHE_TAG ((char)0x82)
+#define COLLABREATE_CHATHISTORY_TAG ((char)0x83)
 
 #define GPID_SUPVAL 1
 #define LAST_SERVER_SUPVAL 2
@@ -273,5 +277,6 @@ char *formatOptVal(OptVal *v, char *buf);
 char *formatLongLong(uint64_t, char *buf);
 
 void postCollabMessage(const char *msg, time_t t = 0);
+void postCollabChatMessage(const char *msg, time_t t = 0);
 
 #endif

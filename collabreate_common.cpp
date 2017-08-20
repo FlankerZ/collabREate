@@ -432,16 +432,21 @@ void do_get_proj_perms(Buffer &b) {
    }
 }
 
-void do_send_user_message(const char *msg) {
+void do_send_user_message(const char *msg) 
+{
    Buffer b;
    uint32_t len = 80 + strlen(msg);
    char *m = new char[len];
    ::qsnprintf(m, len, "< %s> %s", username, msg);
    char *cr = m + strlen(m) - 1;
-   while (*cr == '\n' || *cr == '\r') {
+
+   while (*cr == '\n' || *cr == '\r') 
+   {
       *cr-- = 0;
    }
+
    b.writeInt(COMMAND_USER_MESSAGE);
+
    time_t t;
    time(&t);
    b.writeInt((int)t);

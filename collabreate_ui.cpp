@@ -412,28 +412,39 @@ static const char *months[] = {
    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
 };
 
-void postCollabMessage(const char *message, time_t t) {
+void postCollabMessage(const char *message, time_t t) 
+{
    static time_t last = 0;
-   if (t == 0) {
+
+   if (t == 0) 
+   {
       time(&t);
    }
+
    bool same = sameDay(last, t);
    last = t;
    tm *lt = localtime(&t);
-   if (!same) {
+
+   if (!same) 
+   {
       char change[80];
       ::qsnprintf(change, sizeof(change), "Day changed to %02d %s %4d", lt->tm_mday, months[lt->tm_mon], lt->tm_year + 1900); 
       msg("%s\n", change);
-      if (msgHistory != NULL) {
+      if (msgHistory != NULL) 
+      {
          msgHistory->writeUTF8(change);
       }
    }
+
    last = t;
    uint32_t len = 16 + strlen(message);
    char *m = new char[len];
+
    ::qsnprintf(m, len, "%02d:%02d %s", lt->tm_hour, lt->tm_min, message);
    msg("%s\n", m);
-   if (msgHistory != NULL) {
+
+   if (msgHistory != NULL) 
+   {
       msgHistory->writeUTF8(m);
    }
    delete [] m;

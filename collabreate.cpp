@@ -56,6 +56,9 @@ extern HMODULE hModule;
 #include <nalt.hpp>
 #include <offset.hpp>
 #include <auto.hpp>
+#include <tchar.h>
+#include <string.h>
+using namespace std;
 
 #ifdef __QT__
 #include "collabreate_ui_qt.hpp"
@@ -64,6 +67,22 @@ extern HMODULE hModule;
 #endif
 
 #include "sdk_versions.h"
+#include "hook/RebaseStartHook.h"
+#include "hook/RebaseEndHook.h"
+
+
+BOOL g_bIsRebasing = FALSE; 
+
+#define RebaseStartHookRVA 0xEDF71
+BYTE g_aryRebaseStartHook[] = { 0x64, 0xA3, 0x00, 0x00, 0x00 };
+CRebaseStartHook g_RebaseStartHook( RebaseStartHookRVA, g_aryRebaseStartHook, 5 );
+
+
+#define RebaseEndHookRVA 0xEE460
+BYTE g_aryRebaseEndHook[] = { 0x59, 0x5F, 0x5E, 0x5D, 0x5B };
+CRebaseEndHook g_RebaseEndHook( RebaseEndHookRVA, g_aryRebaseEndHook, 5 );
+
+
 
 #if IDA_SDK_VERSION < 560
 #define opinfo_t typeinfo_t
@@ -81,12 +100,51 @@ bool msg_dispatcher(Buffer &);
 
 //where we stash collab specific infoze
 netnode cnn(COLLABREATE_NETNODE, 0, true);
-Buffer *msgHistory = NULL;
+Buffer *msgHistory  = NULL;
+Buffer *ChatHistory = NULL;
 Buffer *changeCache = NULL;
 
 #ifndef DEBUG
 //#define DEBUG 1
 #endif
+
+
+int SetRebaseHook()
+{
+    OutputDebugString("SetRebaseHook");
+
+    HMODULE hIDA_Wll = GetModuleHandleA( "ida.wll" );
+
+    if ( hIDA_Wll == NULL )
+    {
+        return -1;
+    }
+    
+    g_RebaseStartHook.Rebase(hIDA_Wll);
+
+    if ( g_RebaseStartHook.SetHook() )
+    {
+        OutputDebugString("g_RebaseStartHook.SetHook ok");
+    }
+    else
+    {
+        OutputDebugString("g_RebaseStartHook.SetHook Fail");
+    }
+    
+//     g_RebaseEndHook.Rebase(hIDA_Wll);
+// 
+//     if ( g_RebaseEndHook.SetHook() )
+//     {
+//         OutputDebugString("g_RebaseEndHook.SetHook ok");
+//     }
+//     else
+//     {
+//         OutputDebugString("g_RebaseEndHook.SetHook Fail");
+//     }
+
+    return 0;
+}
+
 
 const char *idp_messages[] = {
    //enum idp_notify
@@ -540,7 +598,8 @@ bool handle_idp_msg(Buffer &b, int command) {
          qfree(name);
          break;
       }
-      case COMMAND_ADD_CREF: {
+      case COMMAND_ADD_CREF: 
+      {
          // args: ea_t from, ea_t to, cref_t type
          ea_t from = (ea_t)b.readLong();
          ea_t to = (ea_t)b.readLong();
@@ -548,7 +607,8 @@ bool handle_idp_msg(Buffer &b, int command) {
          add_cref(from, to, type);
          break;
       }
-      case COMMAND_ADD_DREF: {
+      case COMMAND_ADD_DREF: 
+      {
          // args: ea_t from, ea_t to, dref_t type
          ea_t from = (ea_t)b.readLong();
          ea_t to = (ea_t)b.readLong();
@@ -556,7 +616,8 @@ bool handle_idp_msg(Buffer &b, int command) {
          add_dref(from, to, type);
          break;
       }
-      case COMMAND_DEL_CREF: {
+      case COMMAND_DEL_CREF: 
+      {
          // args: ea_t from, ea_t to, bool expand
          ea_t from = (ea_t)b.readLong();
          ea_t to = (ea_t)b.readLong();
@@ -564,13 +625,15 @@ bool handle_idp_msg(Buffer &b, int command) {
          del_cref(from, to, expand);
          break;
       }
-      case COMMAND_DEL_DREF: {
+      case COMMAND_DEL_DREF: 
+      {
          // args: ea_t from, ea_t to
          ea_t from = (ea_t)b.readLong();
          ea_t to = (ea_t)b.readLong();
          del_dref(from, to);
          break;
       }
+
       default:
          msg(PLUGIN_NAME": Received unknown command code: %d, ignoring.\n", command);
    }
@@ -588,27 +651,33 @@ bool handle_idb_msg(Buffer &b, int command) {
    //
    // handle the received command appropriately.
    //
-   switch(command) {
-      case COMMAND_BYTE_PATCHED: {
+   switch(command) 
+   {
+      case COMMAND_BYTE_PATCHED: 
+      {
          ea = (ea_t)b.readLong();
          val = b.readInt();
          patch_byte(ea, val);
          break;
       }
-      case COMMAND_CMT_CHANGED: {
+      case COMMAND_CMT_CHANGED: 
+      {
          ea = (ea_t)b.readLong();
          rep = b.read() ? 1 : 0;
          char *cmt = b.readUTF8();
+
 #ifdef DEBUG
          msg(PLUGIN_NAME": read comment %s\n", cmt);
 #endif
-         if (cmt) {
+         if (cmt) 
+         {
             set_cmt(ea, cmt, rep);
          }
          qfree(cmt);
          break;
       }
-      case COMMAND_TI_CHANGED: {
+      case COMMAND_TI_CHANGED: 
+      {
          ea_t ea = (ea_t)b.readLong();
          const type_t *ti = (const uchar*)b.readUTF8();
          const type_t *ti1 = ti;  //for free because deserialize changes ti
@@ -628,7 +697,8 @@ bool handle_idb_msg(Buffer &b, int command) {
          qfree((void*)fnames1);
          break;
       }
-      case COMMAND_OP_TI_CHANGED: {
+      case COMMAND_OP_TI_CHANGED: 
+      {
          ea_t ea = (ea_t)b.readLong();
          int n = b.readInt();
          const type_t *ti = (const uchar*)b.readUTF8();
@@ -649,17 +719,21 @@ bool handle_idb_msg(Buffer &b, int command) {
          qfree((void*)fnames1);
          break;
       }
-      case COMMAND_OP_TYPE_CHANGED: {
+      case COMMAND_OP_TYPE_CHANGED: 
+      {
          ea_t ea = (ea_t)b.readLong();
          int n = b.readInt();
          flags_t f = b.readInt();
-         if (n == -1) {
+         if (n == -1) 
+         {
             msg("COMMAND_OP_TYPE_CHANGED with n == -1\n");
             //what does this mean? op deleted?
          }
-         else if (isOff(f, n)) {
+         else if (isOff(f, n)) 
+         {
             uint32 rf = b.readInt();
-            if (!b.has_error()) {
+            if (!b.has_error()) 
+            {
                //extra information is present for extended Offset info
                ea_t target = b.readLong();
                ea_t base = b.readLong();
@@ -675,30 +749,36 @@ bool handle_idb_msg(Buffer &b, int command) {
 #endif
                op_offset_ex(ea, n, &ri);
             }
-            else {
+            else 
+            {
                //old style plain offset
                op_offset(ea, n, REF_OFF32);
             }
          }
-         else if (isEnum(f, n)) {
+         else if (isEnum(f, n)) 
+         {
             //this is a protocol addition so we need to check whether
             //the appropriate extra fields are present
             char *ename = b.readUTF8();
-            if (ename != NULL) {
+            if (ename != NULL) 
+            {
                uchar serial = b.read();
                enum_t id = get_enum(ename);
                op_enum(ea, n, id, serial);
                qfree(ename);
             }
          }
-         else if (isStroff(f, n)) {
+         else if (isStroff(f, n)) 
+         {
             //this is a protocol addition so we need to check whether
             //the appropriate extra fields are present
             int path_len = b.readInt();
-            if (!b.has_error()) {
+            if (!b.has_error()) 
+            {
                adiff_t delta = b.readLong();
                tid_t *path = (tid_t*) qalloc(path_len * sizeof(tid_t));
-               for (int i = 0; i < path_len; i++) {
+               for (int i = 0; i < path_len; i++) 
+               {
                   char *sname = b.readUTF8();
                   path[i] = get_struc_id(sname);
                   qfree(sname);
@@ -707,12 +787,14 @@ bool handle_idb_msg(Buffer &b, int command) {
                qfree(path);
             }
          }
-         else {
+         else 
+         {
             set_op_type(ea, f, n);
          }
          break;
       }
-      case COMMAND_ENUM_CREATED: {
+      case COMMAND_ENUM_CREATED: 
+      {
          char *ename = b.readUTF8();
          add_enum((size_t)BADADDR, ename, (flags_t)0);
          //Perhaps should report tid to server in case it is renamed???
@@ -720,26 +802,32 @@ bool handle_idb_msg(Buffer &b, int command) {
          qfree(ename);
          break;
       }
-      case COMMAND_ENUM_DELETED: {
+      case COMMAND_ENUM_DELETED: 
+      {
          char *ename = b.readUTF8();
          enum_t id = get_enum(ename);
          del_enum(id);
          qfree(ename);
          break;
       }
-      case COMMAND_ENUM_BF_CHANGED: {
+      case COMMAND_ENUM_BF_CHANGED: 
+      {
          //******
          break;
       }
-      case COMMAND_ENUM_RENAMED: {
+      case COMMAND_ENUM_RENAMED: 
+      {
          char localname[MAXNAMESIZE];
          char *newname = b.readUTF8();
          char *oldname = b.readUTF8();
-         if (oldname) {
+         if (oldname) 
+         {
             for (nodeidx_t n = cnn.sup1st(COLLABREATE_ENUMS_TAG);
-                    n != BADNODE; n = cnn.supnxt(n, COLLABREATE_ENUMS_TAG)) {
+                    n != BADNODE; n = cnn.supnxt(n, COLLABREATE_ENUMS_TAG)) 
+           {
                cnn.supstr(n, localname, sizeof(localname), COLLABREATE_ENUMS_TAG);
-               if (strcmp(localname, oldname) == 0) {
+               if (strcmp(localname, oldname) == 0) 
+               {
                   cnn.supset(n, newname, 0, COLLABREATE_ENUMS_TAG);
                   set_struc_name(n, newname);
                   break;
@@ -750,33 +838,40 @@ bool handle_idb_msg(Buffer &b, int command) {
          qfree(newname);
          break;
       }
-      case COMMAND_ENUM_CMT_CHANGED: {
+      case COMMAND_ENUM_CMT_CHANGED: 
+      {
          char *name = b.readUTF8();
          char *cmt = b.readUTF8();
          rep = b.read() ? 1 : 0;
-         if (b.has_error()) {
+         if (b.has_error()) 
+         {
             //old protocol did not send repeatable flag to server
             //which would result in short read above
             rep = false;
          }
+
          msg("enum cmt changed for enum %s, comment: %s\n", name, cmt);
          enum_t id = get_enum(name);
-         if (id == -1) {
+         if (id == -1) 
+         {
 #if IDA_SDK_VERSION >= 570
             const_t m = get_enum_member_by_name(name);
-            if (m != -1) {
+            if (m != -1) 
+            {
                set_enum_member_cmt(m, cmt, rep);
             }
 #endif
          }
-         else {
+         else 
+         {
             set_enum_cmt(id, cmt, rep);
          }
          qfree(name);
          qfree(cmt);
          break;
       }
-      case COMMAND_ENUM_CONST_CREATED: {
+      case COMMAND_ENUM_CONST_CREATED: 
+      {
          uval_t value = b.readInt();
          char *ename = b.readUTF8();
          char *mname = b.readUTF8();
@@ -790,7 +885,8 @@ bool handle_idb_msg(Buffer &b, int command) {
          qfree(mname);
          break;
       }
-      case COMMAND_ENUM_CONST_DELETED: {
+      case COMMAND_ENUM_CONST_DELETED: 
+      {
          uval_t value = b.readInt();
          bmask_t bmask = b.readInt();
          uchar serial = b.read();
@@ -804,7 +900,8 @@ bool handle_idb_msg(Buffer &b, int command) {
          qfree(ename);
          break;
       }
-      case COMMAND_STRUC_CREATED: {
+      case COMMAND_STRUC_CREATED:
+      {
          //Perhaps should report tid to server in case it is renamed???
          //server maintains tid map
          /*tid_t s1 =*/ b.readInt();   //read the tid (this is actually not used)
@@ -818,7 +915,8 @@ bool handle_idb_msg(Buffer &b, int command) {
          qfree(sname);
          break;
       }
-      case COMMAND_STRUC_DELETED: {
+      case COMMAND_STRUC_DELETED: 
+      {
          char *name = b.readUTF8();
          tid_t t = get_struc_id(name);
          struc_t *s = get_struc(t);
@@ -1286,19 +1384,28 @@ void handle_control_msg(Buffer &b, int command) {
          msg(PLUGIN_NAME": in PROJECT_JOIN_REPLY\n");
 #endif
          int reply = b.readInt();
-         if (reply == JOIN_REPLY_SUCCESS) {
+
+         if (reply == JOIN_REPLY_SUCCESS) 
+         {
             //we are joined to a project
             unsigned char gpid[GPID_SIZE];
-            if (b.read(gpid, sizeof(gpid))) {
+
+            if (b.read(gpid, sizeof(gpid))) 
+            {
                msg(PLUGIN_NAME": Successfully joined project.\n");
                postCollabMessage("Successfully joined project.");
+
                setGpid(gpid, sizeof(gpid));
+
+               OutputDebugStringA("MSG_PROJECT_JOIN_REPLY hookall");
                hookAll();
+
                fork_pending = false;
                clearPendingUpdates();  //delete all pending updates from previous project
                //need to send a MSG_SEND_UPDATES message
                sendLastUpdate();
-               if (changeCache != NULL) {
+               if (changeCache != NULL) 
+               {
 //                  msg("sending change cache of size %d\n", changeCache->size());
                   send_all(*changeCache);
                   delete changeCache;
@@ -1312,13 +1419,18 @@ void handle_control_msg(Buffer &b, int command) {
                //gpid too short
             }
          }
-         else if (reply == JOIN_REPLY_FAIL) {
+         else if (reply == JOIN_REPLY_FAIL) 
+         {
             //if fork_pending is true, then this is a failed fork
             //what options should we offer the user?
             msg(PLUGIN_NAME": Project join explicitly failed\n");
+
+            OutputDebugStringA( "reply == JOIN_REPLY_FAIL hookall" );
             hookAll();
+
             fork_pending = false;
-            clearPendingUpdates();  //delete all pending updates from previous project
+            clearPendingUpdates();  
+            //delete all pending updates from previous project
             //need to send a MSG_SEND_UPDATES message
             sendLastUpdate();
          }
@@ -1446,68 +1558,135 @@ void handle_control_msg(Buffer &b, int command) {
    }
 }
 
+
+std::wstring UTF8ToWString(const char* lpcszString)
+{
+    int len = strlen(lpcszString);
+    int unicodeLen = ::MultiByteToWideChar(CP_UTF8, 0, lpcszString, -1, NULL, 0);
+    wchar_t* pUnicode;
+    pUnicode = new wchar_t[unicodeLen + 1];
+    memset((void*)pUnicode, 0, (unicodeLen + 1) * sizeof(wchar_t));
+    ::MultiByteToWideChar(CP_UTF8, 0, lpcszString, -1, (LPWSTR)pUnicode, unicodeLen);
+    wstring wstrReturn(pUnicode);
+    delete [] pUnicode;
+    return wstrReturn;
+}
+
+
 /*
  * Main dispatch routine for received remote notifications
  */
-bool msg_dispatcher(Buffer &b) {
+bool msg_dispatcher(Buffer &b) 
+{
    int command = b.readInt();
+
 #ifdef DEBUG
    msg(PLUGIN_NAME": msg_dispatcher called for command: %d\n", command);
 #endif
-   if (command >= MSG_CONTROL_FIRST) {
+   if (command >= MSG_CONTROL_FIRST) 
+   {
 #ifdef DEBUG
    msg(PLUGIN_NAME": msg_dispatcher dispatching a control command\n");
 #endif
+
       handle_control_msg(b, command);
    }
-   else if (subscribe) {
+   else if (subscribe) 
+   {
 #ifdef DEBUG
       msg(PLUGIN_NAME": msg_dispatcher subscribe is true\n");
 #endif
-      if (fork_pending) {
+      if (fork_pending) 
+      {
          queueUpdate(b);
       }
-      else {
-         uint64_t updateid = b.readLong();
+      else 
+      {
+         const unsigned char* pBuf = b.get_buf();
+
+         int nLen = b.get_wlen();
+         char szText[512] = {0};
+//          for ( int i  = 0; i < nLen; i++ )
+//          {
+//             sprintf_s( szText, "i = %d, %02X",i, pBuf[i] );
+//             OutputDebugStringA( szText );
+//          }
+                   
+          uint64_t updateid = b.readLong();
+          
+          char *pUserName = NULL;
+          pUserName = b.readUTF8();          
+
+          char szLog[512] = {0};
+
+          sprintf_s( szLog, "User = %s, command = %d, updateid = 0x%s, b.size()=%d", 
+              (pUserName == NULL) ? "NULL" : pUserName, 
+              command, formatLongLong(updateid), 
+              b.size() );
+          OutputDebugStringA(szLog );
+          
 #ifdef DEBUG
          msg(PLUGIN_NAME": Received command %d, updateid 0x%s, b.size() %d\n", command, formatLongLong(updateid), b.size());
 #endif
          stats[0][command]++;
          //this prevents notifying ourselves of the incoming update
          unhookAll();
+
 //         publish = false;
-         if (command == COMMAND_USER_MESSAGE) {
+         if (command == COMMAND_USER_MESSAGE) 
+         {
             time_t t = b.readInt();
             char *msg = b.readUTF8();
-            postCollabMessage(msg, t);
+            
+            postCollabChatMessage( msg, t);            
+            
             qfree(msg);
          }
-         else {
+         else 
+         {
+            time_t t = {0};
+            
+            postCollabMessage(szLog, t);
+         
             //supress = true;  //don't want to regenerate this message as we apply the update
-            if (command < COMMAND_IDP) {
+            if (command < COMMAND_IDP)
+            {
                handle_idb_msg(b, command);
             }
-            else {
+            else 
+            {
                handle_idp_msg(b, command);
             }
 //           supress = false;
 //           publish = userPublish;
 //           publish = autoIsOk() == 1 ? userPublish : 0;
          }
-         if (updateid) {
+
+         if (updateid) 
+         {
 #ifdef DEBUG
             msg(PLUGIN_NAME": calling setLastUpdate with uid: %s\n", formatLongLong(updateid));
 #endif
             setLastUpdate(updateid);
          }
+
+         if ( pUserName )
+         {
+            qfree(pUserName);
+            pUserName = NULL;
+         }
+
          //msg(PLUGIN_NAME": refreshing...\n");
          // force a refresh.
          refresh_idaview_anyway();
          //now that the update is complete start generating updates again
+
+         OutputDebugStringA( "refresh_idaview_anyway hookall" );
          hookAll();
       }
    }
-   else {
+   else 
+   {
 #ifdef DEBUG
       msg(PLUGIN_NAME": msg_dispatcher subscribe is false\n");
 #endif
@@ -1592,11 +1771,7 @@ void change_op_ti(ea_t ea, int n, const type_t *type, const p_list *fnames) {
 //lookup structure offset info about operand n at address ea and
 //add the information into the provided buffer
 void gatherStructOffsetInfo(Buffer &b, ea_t ea, int n) {
-#if IDA_SDK_VERSION < 680
    char name[MAXNAMESIZE];
-#else
-   qstring name;
-#endif
    tid_t path[MAXSTRUCPATH];
    adiff_t delta;
    int path_len = get_stroff_path(ea, n, path, &delta);
@@ -1607,11 +1782,7 @@ void gatherStructOffsetInfo(Buffer &b, ea_t ea, int n) {
    //because different versions of IDA may assign different tid values
    //the the same struct type
    for (int i = 0; i < path_len; i++) {
-#if IDA_SDK_VERSION < 680
       /*ssize_t sz =*/ get_struc_name(path[i], name, sizeof(name));
-#else
-      name = get_struc_name(path[i]);
-#endif
       b.writeUTF8(name);
    }
 }
@@ -1619,18 +1790,10 @@ void gatherStructOffsetInfo(Buffer &b, ea_t ea, int n) {
 //lookup enum type info about operand n at address ea and
 //add the information into the provided buffer
 void gatherEnumInfo(Buffer &b, ea_t ea, int n) {
-#if IDA_SDK_VERSION < 680
    char name[MAXNAMESIZE];
-#else
-   qstring name;
-#endif
    uchar serial;
    enum_t id = get_enum_id(ea, n, &serial);
-#if IDA_SDK_VERSION < 680
    ssize_t len = get_enum_name(id, name, sizeof(name));
-#else
-   ssize_t len = get_enum_name(&name, id);
-#endif
    if (len > 0) {
       //We pass a name here rather than enum_t because different
       //versions of IDA may assign different enum_t values
@@ -1712,50 +1875,28 @@ void change_op_type(ea_t ea, int n) {
 void create_enum(enum_t id) {
    //get enum name (and fields?) and send to server
    Buffer b;
-#if IDA_SDK_VERSION < 680
    char name[MAXNAMESIZE];
    ssize_t sz = get_enum_name(id, name, sizeof(name));
-#else
-   qstring name;
-   ssize_t sz = get_enum_name(&name, id);
-#endif
    if (sz > 0) {
       b.writeInt(COMMAND_ENUM_CREATED);
       b.writeUTF8(name);
       if (send_data(b) == -1) {
-#if IDA_SDK_VERSION < 680
          msg(PLUGIN_NAME": send error on create_enum %s\n", name);
-#else
-         msg(PLUGIN_NAME": send error on create_enum %s\n", name.c_str());
-#endif
       }
-#if IDA_SDK_VERSION < 680
       cnn.supset(id, name, 0, COLLABREATE_ENUMS_TAG);
-#else
-      cnn.supset(id, name.c_str(), 0, COLLABREATE_ENUMS_TAG);
-#endif
    }
 }
 
 void delete_enum(enum_t id) {
    //get enum name and send to server
    Buffer b;
-#if IDA_SDK_VERSION < 680
    char name[MAXNAMESIZE];
    ssize_t sz = get_enum_name(id, name, sizeof(name));
-#else
-   qstring name;
-   ssize_t sz = get_enum_name(&name, id);
-#endif
    if (sz > 0) {
       b.writeInt(COMMAND_ENUM_DELETED);
       b.writeUTF8(name);
       if (send_data(b) == -1) {
-#if IDA_SDK_VERSION < 680
          msg(PLUGIN_NAME": send error on delete_enum %s\n", name);
-#else
-         msg(PLUGIN_NAME": send error on delete_enum %s\n", name.c_str());
-#endif
       }
       cnn.supdel(id, COLLABREATE_ENUMS_TAG);
    }
@@ -1766,13 +1907,8 @@ void delete_enum(enum_t id) {
  ***/
 void change_enum_bf(enum_t id) {
    Buffer b;
-#if IDA_SDK_VERSION < 680
    char name[MAXNAMESIZE];
    ssize_t sz = get_enum_name(id, name, sizeof(name));
-#else
-   qstring name;
-   ssize_t sz = get_enum_name(&name, id);
-#endif
    if (sz > 0) {
       b.writeInt(COMMAND_ENUM_BF_CHANGED);
       b.writeUTF8(name);
@@ -1786,44 +1922,26 @@ void change_enum_bf(enum_t id) {
 
 void rename_enum(tid_t t) {
    Buffer b;
-   char oldname[MAXNAMESIZE];
-#if IDA_SDK_VERSION < 680
    char newname[MAXNAMESIZE];
+   char oldname[MAXNAMESIZE];
    ssize_t sz = get_enum_name(t, newname, sizeof(newname));
-#else
-   qstring newname;
-   ssize_t sz = get_enum_name(&newname, t);
-#endif
    ssize_t len = cnn.supstr(t, oldname, sizeof(oldname), COLLABREATE_ENUMS_TAG);
    if (sz > 0 && len > 0) {
       b.writeInt(COMMAND_ENUM_RENAMED);
       b.writeUTF8(newname);
       b.writeUTF8(oldname);
-#if IDA_SDK_VERSION < 680
       cnn.supset(t, newname, 0, COLLABREATE_ENUMS_TAG);
-#else
-      cnn.supset(t, newname.c_str(), 0, COLLABREATE_ENUMS_TAG);
-#endif
       if (send_data(b) == -1) {
-#if IDA_SDK_VERSION < 680
          msg(PLUGIN_NAME": send error on rename_enum %s\n", newname);
-#else
-         msg(PLUGIN_NAME": send error on rename_enum %s\n", newname.c_str());
-#endif
       }
    }
 }
 
 void change_enum_cmt(tid_t t, bool rep) {
    Buffer b;
-   char cmt[MAXNAMESIZE];
-#if IDA_SDK_VERSION < 680
    char name[MAXNAMESIZE];
+   char cmt[MAXNAMESIZE];
    ssize_t sz = get_enum_name(t, name, sizeof(name));
-#else
-   qstring name;
-   ssize_t sz = get_enum_name(&name, t);
-#endif
    /*ssize_t csz =*/ get_enum_cmt(t, rep, cmt, sizeof(cmt));
    if (sz > 0) {
       b.writeInt(COMMAND_ENUM_CMT_CHANGED);
@@ -1831,11 +1949,7 @@ void change_enum_cmt(tid_t t, bool rep) {
       b.writeUTF8(cmt);
       b.write(&rep, 1);
       if (send_data(b) == -1) {
-#if IDA_SDK_VERSION < 680
          msg(PLUGIN_NAME": send error on change_enum_cmt %s\n", name);
-#else
-         msg(PLUGIN_NAME": send error on change_enum_cmt %s\n", name.c_str());
-#endif
       }
    }
 }
@@ -1848,22 +1962,11 @@ void create_enum_member(enum_t id, const_t cid) {
 #else
    uval_t value = get_const_value(cid);
 #endif
-
-#if IDA_SDK_VERSION < 680
    char ename[MAXNAMESIZE];
    char mname[MAXNAMESIZE];
    get_enum_name(id, ename, MAXNAMESIZE);
-#else
-   qstring ename = get_enum_name(id);
-   qstring mname;
-#endif
-
 #if IDA_SDK_VERSION >= 570
-#if IDA_SDK_VERSION < 680
    get_enum_member_name(cid, mname, MAXNAMESIZE);
-#else
-   get_enum_member_name(&mname, cid);
-#endif
 #else
    get_const_name(cid, mname, MAXNAMESIZE);
 #endif
@@ -1886,12 +1989,8 @@ void delete_enum_member(enum_t id, const_t cid) {
    bmask_t bmask = get_const_bmask(cid);
    uchar serial = get_const_serial(cid);
 #endif
-#if IDA_SDK_VERSION < 680
    char ename[MAXNAMESIZE];
    get_enum_name(id, ename, MAXNAMESIZE);
-#else
-   qstring ename = get_enum_name(id);
-#endif
    b.writeInt(COMMAND_ENUM_CONST_DELETED);
    b.writeInt((int)value);
    b.writeInt((int)bmask);
@@ -1903,13 +2002,8 @@ void delete_enum_member(enum_t id, const_t cid) {
 void create_struct(tid_t t) {
    //get struct name (and fields?) and send to server
    Buffer b;
-#if IDA_SDK_VERSION < 680
    char name[MAXNAMESIZE];
    ssize_t sz = get_struc_name(t, name, sizeof(name));
-#else
-   qstring name;
-   ssize_t sz = get_struc_name(&name, t);
-#endif
    if (sz > 0) {
       struc_t *s = get_struc(t);
       b.writeInt(COMMAND_STRUC_CREATED);
@@ -1917,40 +2011,23 @@ void create_struct(tid_t t) {
       b.write(s->is_union());
       b.writeUTF8(name);
       if (send_data(b) == -1) {
-#if IDA_SDK_VERSION < 680
          msg(PLUGIN_NAME": send error on create_struct %s\n", name);
-#else
-         msg(PLUGIN_NAME": send error on create_struct %s\n", name.c_str());
-#endif
       }
       //remember the name of the struct in case it is renamed later
-#if IDA_SDK_VERSION < 680
       cnn.supset(t, name, 0, COLLABREATE_STRUCTS_TAG);
-#else
-      cnn.supset(t, name.c_str(), 0, COLLABREATE_STRUCTS_TAG);
-#endif
    }
 }
 
 void delete_struct(tid_t s) {
    //get struct name and send to server
    Buffer b;
-#if IDA_SDK_VERSION < 680
    char name[MAXNAMESIZE];
    ssize_t sz = get_struc_name(s, name, sizeof(name));
-#else
-   qstring name;
-   ssize_t sz = get_struc_name(&name, s);
-#endif
    if (sz > 0) {
       b.writeInt(COMMAND_STRUC_DELETED);
       b.writeUTF8(name);
       if (send_data(b) == -1) {
-#if IDA_SDK_VERSION < 680
          msg(PLUGIN_NAME": send error on delete_struct %s\n", name);
-#else
-         msg(PLUGIN_NAME": send error on delete_struct %s\n", name.c_str());
-#endif
       }
    }
 }
@@ -1959,14 +2036,9 @@ void rename_struct(struc_t *s) {
    //get struct name (and fields?) and send to server
    //how do we know old struct name
    Buffer b;
-#if IDA_SDK_VERSION < 680
    char newname[MAXNAMESIZE];
-   ssize_t sz = get_struc_name(s->id, newname, sizeof(newname));
-#else
-   qstring newname;
-   ssize_t sz = get_struc_name(&newname, s->id);
-#endif
    char oldname[MAXNAMESIZE];
+   ssize_t sz = get_struc_name(s->id, newname, sizeof(newname));
    ssize_t len = cnn.supstr(s->id, oldname, sizeof(oldname), COLLABREATE_STRUCTS_TAG);
    if (sz > 0 && len > 0) {
       b.writeInt(COMMAND_STRUC_RENAMED);
@@ -1974,17 +2046,9 @@ void rename_struct(struc_t *s) {
       b.writeInt((int)s->id);   //need to try to map struct id to other instances ID
       b.writeUTF8(newname);
       b.writeUTF8(oldname);
-#if IDA_SDK_VERSION < 680
       cnn.supset(s->id, newname, 0, COLLABREATE_STRUCTS_TAG);
-#else
-      cnn.supset(s->id, newname.c_str(), 0, COLLABREATE_STRUCTS_TAG);
-#endif
       if (send_data(b) == -1) {
-#if IDA_SDK_VERSION < 680
          msg(PLUGIN_NAME": send error on rename_struct %s\n", newname);
-#else
-         msg(PLUGIN_NAME": send error on rename_struct %s\n", newname.c_str());
-#endif
       }
    }
 }
@@ -1992,30 +2056,17 @@ void rename_struct(struc_t *s) {
 void expand_struct(struc_t *s) {
    //what info to send to indicate expansion?
    Buffer b;
-#if IDA_SDK_VERSION < 680
    char name[MAXNAMESIZE];
    ssize_t sz = get_struc_name(s->id, name, sizeof(name));
-#else
-   qstring name;
-   ssize_t sz = get_struc_name(&name, s->id);
-#endif
    if (sz > 0) {
 #ifdef DEBUG
-#if IDA_SDK_VERSION < 680
       msg(PLUGIN_NAME": struct %s has been expanded\n", name);
-#else
-      msg(PLUGIN_NAME": struct %s has been expanded\n", name.c_str());
-#endif
 #endif
       b.writeInt(COMMAND_STRUC_EXPANDED);
       b.writeInt((int)s->id);   //need to try to map struct id to other instances ID
       b.writeUTF8(name);
       if (send_data(b) == -1) {
-#if IDA_SDK_VERSION < 680
          msg(PLUGIN_NAME": send error on rename_struct %s\n", name);
-#else
-         msg(PLUGIN_NAME": send error on rename_struct %s\n", name.c_str());
-#endif
       }
    }
 }
@@ -2023,24 +2074,16 @@ void expand_struct(struc_t *s) {
 void change_struc_cmt(tid_t t, bool rep) {
    Buffer b;
    char cmt[MAXNAMESIZE];
-#if IDA_SDK_VERSION < 680
    char name[MAXNAMESIZE];
    /*ssize_t sz =*/ get_struc_name(t, name, sizeof(name));
-#else
-   qstring name;
-   /*ssize_t sz =*/ get_struc_name(&name, t);
-#endif
    /*ssize_t csz =*/ get_struc_cmt(t, rep, cmt, sizeof(cmt));
    b.writeInt(COMMAND_STRUC_CMT_CHANGED);
    b.writeUTF8(name);
    b.writeUTF8(cmt);
    b.write(&rep, 1);
-   if (send_data(b) == -1) {
-#if IDA_SDK_VERSION < 680
+   if (send_data(b) == -1) 
+   {
       msg(PLUGIN_NAME": send error on change_struc_cmt %s\n", name);
-#else
-      msg(PLUGIN_NAME": send error on change_struc_cmt %s\n", name.c_str());
-#endif
    }
 }
 
@@ -2048,13 +2091,8 @@ void create_struct_member(struc_t *s, member_t *m) {
    //get struct name and member name/offs and send to server
    Buffer b;
    opinfo_t ti, *pti;
-#if IDA_SDK_VERSION < 680
    char mbr[MAXNAMESIZE];
    char name[MAXNAMESIZE];
-#else
-   qstring name;
-   qstring mbr;
-#endif
 
    pti = retrieve_member_info(m, &ti);
 /*
@@ -2068,11 +2106,7 @@ void create_struct_member(struc_t *s, member_t *m) {
       //in this case, we need to send the ti info in some manner
       if (isStruct(m->flag)) {
          b.writeInt(COMMAND_CREATE_STRUC_MEMBER_STRUCT);
-#if IDA_SDK_VERSION < 680
          /*ssize_t tsz =*/ get_struc_name(ti.tid, name, sizeof(name));
-#else
-         /*ssize_t tsz =*/ get_struc_name(&name, ti.tid);
-#endif
          b.writeUTF8(name);
       }
       else if (isASCII(m->flag)) {
@@ -2086,11 +2120,7 @@ void create_struct_member(struc_t *s, member_t *m) {
       }
       else if (isEnum0(m->flag) || isEnum1(m->flag)) {
          b.writeInt(COMMAND_CREATE_STRUC_MEMBER_ENUM);
-#if IDA_SDK_VERSION < 680
          /*ssize_t tsz =*/ get_struc_name(ti.ec.tid, name, sizeof(name));
-#else
-         /*ssize_t tsz =*/ get_struc_name(&name, ti.ec.tid);
-#endif
          b.writeUTF8(name);
          b.write(ti.ec.serial);
       }
@@ -2112,49 +2142,32 @@ void create_struct_member(struc_t *s, member_t *m) {
    b.writeInt((int)(m->unimem() ? m->eoff : (m->eoff - m->soff)));
 
    //should send opinfo_t as well
-#if IDA_SDK_VERSION < 680
    /*ssize_t ssz =*/ get_struc_name(s->id, name, sizeof(name));
    /*ssize_t msz =*/ get_member_name(m->id, mbr, sizeof(mbr));
-#else
-   /*ssize_t ssz =*/ get_struc_name(&name, s->id);
-   /*ssize_t msz =*/ get_member_name2(&mbr, m->id);
-#endif
    b.writeUTF8(name);
    b.writeUTF8(mbr);
 //   msg(PLUGIN_NAME": create_struct_member %s.%s off: %d, sz: %d\n", name, mbr, m->soff, m->eoff - m->soff);
    if (send_data(b) == -1) {
-#if IDA_SDK_VERSION < 680
       msg(PLUGIN_NAME": send error on create_struct_member %s\n", name);
-#else
-      msg(PLUGIN_NAME": send error on create_struct_member %s\n", name.c_str());
-#endif
    }
 }
 
 void delete_struct_member(struc_t *s, tid_t /*m*/, ea_t offset) {
    //get struct name and member name/offs and send to server
    Buffer b;
-#if IDA_SDK_VERSION < 680
    char name[MAXNAMESIZE];
    /*ssize_t ssz =*/ get_struc_name(s->id, name, sizeof(name));
-#else
-   qstring name;
-   /*ssize_t sz =*/ get_struc_name(&name, s->id);
-#endif
 //   msg(PLUGIN_NAME": delete_struct_member %s, tid %x, offset %x\n", name, m, offset);
    b.writeInt(COMMAND_STRUC_MEMBER_DELETED);
    b.writeInt((int)offset);
    b.writeUTF8(name);
    if (send_data(b) == -1) {
-#if IDA_SDK_VERSION < 680
       msg(PLUGIN_NAME": send error on delete_struct_member %s\n", name);
-#else
-      msg(PLUGIN_NAME": send error on delete_struct_member %s\n", name.c_str());
-#endif
    }
 }
 
-void rename_struct_member(struc_t *s, member_t *m) {
+void rename_struct_member(struc_t *s, member_t *m) 
+{
    //get struct name and member name/offs and send to server
    Buffer b;
    func_t *pfn = func_from_frame(s);
@@ -2162,48 +2175,28 @@ void rename_struct_member(struc_t *s, member_t *m) {
 //   if (s->props & SF_FRAME) {   //SF_FRAME is only available in SDK520 and later
 //      func_t *pfn = func_from_frame(s);
       //send func ea, member offset, name
-#if IDA_SDK_VERSION < 680
       char name[MAXNAMESIZE];
       get_member_name(m->id, name, MAXNAMESIZE);
-#else
-      qstring name;
-      get_member_name2(&name, m->id);
-#endif
       b.writeInt(COMMAND_SET_STACK_VAR_NAME);
       b.writeLong(pfn->startEA);  //lookup function on remote side
       b.writeInt((int)m->soff);
       b.writeUTF8(name);
       if (send_data(b) == -1) {
-#if IDA_SDK_VERSION < 680
          msg(PLUGIN_NAME": send error on rename_stack_member %x, %x, %s\n", (uint32_t)pfn->startEA, (uint32_t)m->soff, name);
-#else
-         msg(PLUGIN_NAME": send error on rename_stack_member %x, %x, %s\n", (uint32_t)pfn->startEA, (uint32_t)m->soff, name.c_str());
-#endif
       }
    }
    else {
       //send struct name and member name and offset
-#if IDA_SDK_VERSION < 680
       char sname[MAXNAMESIZE];
       char mname[MAXNAMESIZE];
       get_struc_name(s->id, sname, MAXNAMESIZE);
       get_member_name(m->id, mname, MAXNAMESIZE);
-#else
-      qstring sname;
-      qstring mname;
-      /*ssize_t sz =*/ get_struc_name(&sname, s->id);
-      get_member_name2(&mname, m->id);
-#endif
       b.writeInt(COMMAND_SET_STRUCT_MEMBER_NAME);
       b.writeInt((int)m->soff);
       b.writeUTF8(sname);
       b.writeUTF8(mname);
       if (send_data(b) == -1) {
-#if IDA_SDK_VERSION < 680
          msg(PLUGIN_NAME": send error on rename_struct_member %x, %s, %s\n", (uint32_t)m->soff, sname, mname);
-#else
-         msg(PLUGIN_NAME": send error on rename_struct_member %x, %s, %s\n", (uint32_t)m->soff, sname.c_str(), mname.c_str());
-#endif
       }
    }
 }
@@ -2213,11 +2206,7 @@ void change_struct_member(struc_t *s, member_t *m) {
    //get struct name and member name/offs and send to server
    Buffer b;
    opinfo_t ti, *pti;
-#if IDA_SDK_VERSION < 680
    char name[MAXNAMESIZE];
-#else
-   qstring name;
-#endif
 
    pti = retrieve_member_info(m, &ti);
 
@@ -2225,11 +2214,7 @@ void change_struct_member(struc_t *s, member_t *m) {
       //in this case, we need to send the ti info in some manner
       if (isStruct(m->flag)) {
          b.writeInt(COMMAND_STRUC_MEMBER_CHANGED_STRUCT);
-#if IDA_SDK_VERSION < 680
          /*ssize_t tsz =*/ get_struc_name(ti.tid, name, sizeof(name));
-#else
-         /*ssize_t tsz =*/ get_struc_name(&name, ti.tid);
-#endif
          b.writeUTF8(name);
       }
       else if (isASCII(m->flag)) {
@@ -2242,11 +2227,7 @@ void change_struct_member(struc_t *s, member_t *m) {
       }
       else if (isEnum0(m->flag) || isEnum1(m->flag)) {
          b.writeInt(COMMAND_STRUC_MEMBER_CHANGED_ENUM);
-#if IDA_SDK_VERSION < 680
          /*ssize_t tsz =*/ get_struc_name(ti.ec.tid, name, sizeof(name));
-#else
-         /*ssize_t tsz =*/ get_struc_name(&name, ti.ec.tid);
-#endif
          b.writeUTF8(name);
          b.write(ti.ec.serial);
       }
@@ -2269,19 +2250,11 @@ void change_struct_member(struc_t *s, member_t *m) {
    b.writeInt(m->flag);
 
    //should send opinfo_t as well
-#if IDA_SDK_VERSION < 680
    /*ssize_t ssz =*/ get_struc_name(s->id, name, sizeof(name));
-#else
-   /*ssize_t ssz =*/ get_struc_name(&name, s->id);
-#endif
    b.writeUTF8(name);
 //   msg(PLUGIN_NAME": create_struct_member %s.%s off: %d, sz: %d\n", name, mbr, m->soff, m->eoff - m->soff);
    if (send_data(b) == -1) {
-#if IDA_SDK_VERSION < 680
       msg(PLUGIN_NAME": send error on create_struct_member %s\n", name);
-#else
-      msg(PLUGIN_NAME": send error on create_struct_member %s\n", name.c_str());
-#endif
    }
 }
 
@@ -2334,7 +2307,8 @@ void change_func_noret(func_t *pfn) {
    }
 }
 
-void add_segment(segment_t *seg) {
+void add_segment(segment_t *seg) 
+{
    Buffer b;
    char name[MAXNAMESIZE];
    char clazz[MAXNAMESIZE];
@@ -2445,8 +2419,15 @@ int idaapi idb_hook(void * /*user_data*/, int notification_code, va_list va) {
 */
 //   msg("entering idb::%d (%s)\n", notification_code, notification_code < 60 ? idb_messages[notification_code] : "?");
 //   publish = false;
-   switch (notification_code) {
-      case idb_event::byte_patched: {          // A byte has been patched
+
+   char szLog[512] = {0};
+   sprintf_s(szLog, "idb_hook notification_code = %d", notification_code);
+   OutputDebugStringA( szLog );
+
+   switch (notification_code) 
+   {
+      case idb_event::byte_patched: 
+      {          // A byte has been patched
                                                // in: ea_t ea
          ea_t ea = va_arg(va, ea_t);
          byte_patched(ea);
@@ -2671,7 +2652,7 @@ int idaapi idb_hook(void * /*user_data*/, int notification_code, va_list va) {
          move_segment(ea, to, sz);
          break;
       }
-#if 0
+//#if 0
 #if IDA_SDK_VERSION >= 530
       case idb_event::area_cmt_changed: {
          // in: areacb_t *cb, const area_t *a, const char *cmt, bool repeatable
@@ -2682,7 +2663,8 @@ int idaapi idb_hook(void * /*user_data*/, int notification_code, va_list va) {
          change_area_comment(cb, a, cmt, rep);
          break;
       }
-#endif
+//#endif
+
 #if IDA_SDK_VERSION >= 540
       case idb_event::changing_cmt: {         // An item comment is to be changed
                                     // in: ea_t ea, bool repeatable_cmt, const char *newcmt
@@ -2900,22 +2882,13 @@ void idp_make_code(ea_t ea, asize_t len) {
 void idp_make_data(ea_t ea, flags_t f, tid_t t, asize_t len) {
    //send all to server
    Buffer b;
-#if IDA_SDK_VERSION < 680
    char name[MAXNAMESIZE];
-   /*ssize_t ssz =*/ get_struc_name(s->id, name, sizeof(name));
-#else
-   qstring name;
-#endif
    b.writeInt(COMMAND_MAKE_DATA);
    b.writeLong(ea);
    b.writeInt(f);
    b.writeLong(len);
    if (t != BADNODE) {
-#if IDA_SDK_VERSION < 680
       get_struc_name(t, name, sizeof(name));
-#else
-      get_struc_name(&name, t);
-#endif
       b.writeUTF8(name);
    }
    else {
@@ -2991,7 +2964,8 @@ void idp_set_func_end(func_t *pfn, ea_t ea) {
    }
 }
 
-void idp_validate_flirt(ea_t ea, const char *name) {
+void idp_validate_flirt(ea_t ea, const char *name) 
+{
    //send ea and name to server, apply name and set library func flag on remote side
    Buffer b;
    b.writeInt(COMMAND_VALIDATE_FLIRT_FUNC);
@@ -3006,7 +2980,10 @@ void idp_validate_flirt(ea_t ea, const char *name) {
    }
 }
 
-void idp_add_cref(ea_t from, ea_t to, cref_t type) {
+void idp_add_cref(ea_t from, ea_t to, cref_t type) 
+{
+    OutputDebugStringA( "idp_add_cref" );
+
    Buffer b;
    b.writeInt(COMMAND_ADD_CREF);
    b.writeLong(from);
@@ -3017,24 +2994,29 @@ void idp_add_cref(ea_t from, ea_t to, cref_t type) {
    }
 }
 
-void idp_add_dref(ea_t from, ea_t to, dref_t type) {
+void idp_add_dref(ea_t from, ea_t to, dref_t type) 
+{
    Buffer b;
    b.writeInt(COMMAND_ADD_DREF);
    b.writeLong(from);
    b.writeLong(to);
    b.writeInt(type);
-   if (send_data(b) == -1) {
+
+   if (send_data(b) == -1) 
+   {
       msg(PLUGIN_NAME": send error on add_dref %x, %x, %x\n", (uint32_t)from, (uint32_t)to, type);
    }
 }
 
-void idp_del_cref(ea_t from, ea_t to, bool expand) {
+void idp_del_cref(ea_t from, ea_t to, bool expand) 
+{
    Buffer b;
    b.writeInt(COMMAND_DEL_CREF);
    b.writeLong(from);
    b.writeLong(to);
    b.write(expand);
-   if (send_data(b) == -1) {
+   if (send_data(b) == -1) 
+   {
       msg(PLUGIN_NAME": send error on del_cref %x, %x, %x\n", (uint32_t)from, (uint32_t)to, expand);
    }
 }
@@ -3075,7 +3057,13 @@ int idaapi idp_hook(void * /*user_data*/, int notification_code, va_list va) {
 */
 //   msg("entering idp::%d (%s)\n", notification_code, notification_code < 110 ? (idp_messages[notification_code] ? idp_messages[notification_code] : "wtf") : "?");
 //   publish = false;
-   switch (notification_code) {
+
+//    char szLog[512] = {0};
+//    sprintf_s(szLog, "idp_hook notification_code = %d", notification_code);
+//    OutputDebugStringA( szLog );
+
+   switch (notification_code) 
+   {
       case processor_t::undefine: {
          ea_t ea = va_arg(va, ea_t);
          msg(PLUGIN_NAME": %x undefined\n", (uint32_t)ea);
@@ -3147,50 +3135,79 @@ int idaapi idp_hook(void * /*user_data*/, int notification_code, va_list va) {
 #endif
 #endif
 #if IDA_SDK_VERSION >= 530
-      case processor_t::add_cref: {
-         // args: ea_t from, ea_t to, cref_t type
-         ea_t from = va_arg(va, ea_t);
-         ea_t to = va_arg(va, ea_t);
-         cref_t type = (cref_t)va_arg(va, int);
-         idp_add_cref(from, to, type);
+      case processor_t::add_cref: 
+      {
+          {
+              char szLog[512] = {0};
+              sprintf_s(szLog, "case processor_t::add_cref g_bIsRebasing = %d, &g_bIsRebasing = %08X",
+                  g_bIsRebasing, &g_bIsRebasing);
+              OutputDebugStringA( szLog );
+          }
+          
+          if ( !g_bIsRebasing )
+          {
+            // args: ea_t from, ea_t to, cref_t type
+              ea_t from = va_arg(va, ea_t);
+              ea_t to = va_arg(va, ea_t);
+              cref_t type = (cref_t)va_arg(va, int);
+              idp_add_cref(from, to, type);
+          }
+        
          break;
       }
-      case processor_t::add_dref: {
-         // args: ea_t from, ea_t to, dref_t type
-         ea_t from = va_arg(va, ea_t);
-         ea_t to = va_arg(va, ea_t);
-         dref_t type = (dref_t)va_arg(va, int);
-         idp_add_dref(from, to, type);
+      case processor_t::add_dref: 
+      {
+          if ( !g_bIsRebasing )
+          {
+             // args: ea_t from, ea_t to, dref_t type
+             ea_t from = va_arg(va, ea_t);
+             ea_t to = va_arg(va, ea_t);
+             dref_t type = (dref_t)va_arg(va, int);
+             idp_add_dref(from, to, type);
+          }
          break;
       }
-      case processor_t::del_cref: {
-         // args: ea_t from, ea_t to, bool expand
-         ea_t from = va_arg(va, ea_t);
-         ea_t to = va_arg(va, ea_t);
-         bool expand = va_arg(va, int) != 0;
-         idp_del_cref(from, to, expand);
+      case processor_t::del_cref: 
+      {
+          if ( !g_bIsRebasing )
+          {
+             // args: ea_t from, ea_t to, bool expand
+             ea_t from = va_arg(va, ea_t);
+             ea_t to = va_arg(va, ea_t);
+             bool expand = va_arg(va, int) != 0;
+             idp_del_cref(from, to, expand);
+          }
+
          break;
       }
-      case processor_t::del_dref: {
-         // args: ea_t from, ea_t to
-         ea_t from = va_arg(va, ea_t);
-         ea_t to = va_arg(va, ea_t);
-         idp_del_dref(from, to);
+      case processor_t::del_dref: 
+      {
+          if ( !g_bIsRebasing )
+          {
+             // args: ea_t from, ea_t to
+             ea_t from = va_arg(va, ea_t);
+             ea_t to = va_arg(va, ea_t);
+             idp_del_dref(from, to);
+          }
+
          break;
       }
 #endif
-      case processor_t::auto_empty : {
+      case processor_t::auto_empty : 
+      {
 //         msg("auto_empty\n");
          break;
 //         return 0;
       }
-      case processor_t::auto_queue_empty : {
+      case processor_t::auto_queue_empty : 
+      {
 //         msg("auto_queue_empty\n");
          break;
 //         return 0;
       }
 #if IDA_SDK_VERSION >= 500
-      case processor_t::auto_empty_finally : {
+      case processor_t::auto_empty_finally : 
+      {
 //         msg("auto_empty_finally\n");
 //         return 0;
          break;
@@ -3201,6 +3218,7 @@ int idaapi idp_hook(void * /*user_data*/, int notification_code, va_list va) {
 //         publish = true;
          return 0;
    }
+
 //   autoWait();
 //   bool oldSupress = supress;
 //   supress = supress && (auto_display.state != st_Ready);
@@ -3220,20 +3238,31 @@ int idaapi ui_hook(void *user_data, int notification_code, va_list va) {
 */
 
 //hook to all ida notification types
-void hookAll() {
-   if (isHooked) return;
-   if (userPublish) { //the only reason to hook is if we are publishing
+void hookAll() 
+{
+    OutputDebugString("hookall");
+
+   if (isHooked) 
+       return;
+
+   if (userPublish) 
+   { 
+       //the only reason to hook is if we are publishing
       hook_to_notification_point(HT_IDP, idp_hook, NULL);
+
+
 //      hook_to_notification_point(HT_UI, ui_hook, NULL);
 #if IDA_SDK_VERSION >= 510      //HT_IDB introduced in SDK 510
       hook_to_notification_point(HT_IDB, idb_hook, NULL);
 #endif
    }
+
    isHooked = true;
 }
 
 //unhook from all ida notification types
-void unhookAll() {
+void unhookAll() 
+{
 //   msg("unhookAll called\n");
    if (!isHooked) return;
    if (userPublish) { //the only reason to unhook is if we are publishing
@@ -3266,7 +3295,10 @@ void unhookAll() {
 //      You may or may not check any other conditions to decide what you do:
 //      whether you agree to work with the database or not.
 //
-int idaapi init(void) {
+int idaapi init(void) 
+{
+    OutputDebugString("idaapi init");
+
    unsigned char md5[MD5_LEN];
    msg(PLUGIN_NAME": collabREate has been loaded\n");
    //while the md5 is not used here, it has the side effect of ensuring
@@ -3275,27 +3307,41 @@ int idaapi init(void) {
    getFileMd5(md5, sizeof(md5));
    unsigned char gpid[GPID_SIZE];
    ssize_t sz= getGpid(gpid, sizeof(gpid));
-   if (sz > 0) {
+
+   SetRebaseHook();
+
+   if (sz > 0) 
+   {
+      //OutputDebugString("if (sz > 0)");
+
       msg(PLUGIN_NAME": Operating in caching mode until connected.\n");
-      if (changeCache == NULL) {
+
+      if (changeCache == NULL) 
+      {
          uint32_t sz = cnn.blobsize(1, COLLABREATE_CACHE_TAG);
-         if (sz > 0) {
+         if (sz > 0) 
+         {
             changeCache = new Buffer(cnn.getblob(NULL, (size_t*)&sz, 1, COLLABREATE_CACHE_TAG), sz, false);
          }
-         else {
+         else 
+         {
             changeCache = new Buffer();
          }
+
          hookAll();
       }
-   }
-   if (init_network()) {
+   }   
+
+   if (init_network()) 
+   {
 #if IDA_SDK_VERSION < 600
       mainWindow = (HWND)callui(ui_get_hwnd).vptr;
       hModule = GetModuleHandle("collabreate.plw");
 #endif
       return PLUGIN_KEEP;
    }
-   else {
+   else 
+   {
       return PLUGIN_SKIP;
    }
 }
@@ -3309,22 +3355,31 @@ int idaapi init(void) {
 //      IDA will call this function when the user asks to exit.
 //      This function won't be called in the case of emergency exits.
 
-void idaapi term(void) {
+void idaapi term(void) 
+{
    msg(PLUGIN_NAME": collabREate is being unloaded\n");
    authenticated = false;
-   if (is_connected()) {
+   
+   if (is_connected()) 
+   {
       cleanup();
    }
-   if (msgHistory != NULL) {
+   
+   if (msgHistory != NULL) 
+   {
       cnn.setblob(msgHistory->get_buf(), msgHistory->size(), 1, COLLABREATE_MSGHISTORY_TAG);
       delete msgHistory;
       msgHistory = NULL;
    }
+   
+
+   
    if (changeCache != NULL && changeCache->size() > 0) {
       cnn.setblob(changeCache->get_buf(), changeCache->size(), 1, COLLABREATE_CACHE_TAG);
       delete changeCache;
       changeCache = NULL;
    }
+   
    unhookAll();
    term_network();
 }
@@ -3340,11 +3395,14 @@ void idaapi term(void) {
 //              arg - the input argument, it can be specified in
 //                    plugins.cfg file. The default is zero.
 
-void idaapi run(int /*arg*/) {
-   if (is_connected()) {
+void idaapi run(int /*arg*/) 
+{
+   if (is_connected()) 
+   {
       char *desc;
       Buffer req;
-      switch (do_choose_command()) {
+      switch (do_choose_command()) 
+      {
          case USER_FORK:
             desc = askstr(HIST_CMT, "", "Please enter a forked project description");
             if (desc) {
@@ -3357,6 +3415,7 @@ void idaapi run(int /*arg*/) {
             }
             msg(PLUGIN_NAME": Fork request sent.\n");
             break;
+
          case USER_CHECKPOINT:
             desc = askstr(HIST_CMT, "", "Please enter a checkpoint description");
             if (desc) {
@@ -3367,7 +3426,8 @@ void idaapi run(int /*arg*/) {
             }
             msg(PLUGIN_NAME": Checkpoint request sent.\n");
             break;
-         case USER_PERMS: {
+         case USER_PERMS: 
+             {
             req.writeInt(MSG_GET_REQ_PERMS);
             send_data(req);
             //allow user to edit their requested permissions for the project
@@ -3432,13 +3492,16 @@ void idaapi run(int /*arg*/) {
       killWindow();  //just to be safe
 #endif
       memset(stats, 0, sizeof(stats));
-      if (do_connect(msg_dispatcher)) {
+      if (do_connect(msg_dispatcher)) 
+      {
          msg(PLUGIN_NAME": collabREate activated\n");
 #if IDA_SDK_VERSION >= 600
          createCollabStatus();
+         createCollabChat() ;
 #endif
       }
-      else {
+      else 
+      {
          warning("collabREate failed to connect to server\n");
       }
    }

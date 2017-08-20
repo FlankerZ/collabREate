@@ -292,7 +292,8 @@ public class Client extends Thread implements CollabreateConstants {
     * @param lastupdateid the updateid that the project forked at
     * @param desc a description of the newly forked project
     */
-   protected void sendForkFollow(String fuser, String gpid, long lastupdateid, String desc) {
+   protected void sendForkFollow(String fuser, String gpid, long lastupdateid, String desc) 
+   {
       try {
          CollabreateOutputStream cos = new CollabreateOutputStream();
          logln("Sending forkfollow for " + gpid + " initiated by " + fuser + " at updateid " + lastupdateid, LINFO2);
@@ -364,34 +365,64 @@ public class Client extends Thread implements CollabreateConstants {
     * run this is the main thread for the Client class, it continually loops, receiving commands
     * and performing appropriate actions for each command
     */
-   public void run() {
-      try {
+   public void run() 
+   {
+      logln("run11", LINFO3);
+        
+      try 
+      {
          main_loop:
-         while (true) {
+         
+         while (true) 
+         {
             CollabreateOutputStream os = new CollabreateOutputStream();
             int len = dis.readInt();
             int command = dis.readInt();
+            
             logln("received data len: " + len + ", cmd: " + command, LDEBUG);
-            if (command < MAX_COMMAND && command > 0) {
+            logln("received data len: " + len + ", cmd: " + command, LINFO3 );
+            
+            if (command < MAX_COMMAND && command > 0) 
+            {
                stats[1][command]++;
             }
+            
             len -= 8;
-            if (command < MSG_CONTROL_FIRST) {
+            
+            if (command < MSG_CONTROL_FIRST) 
+            {
+               logln("command < MSG_CONTROL_FIRST", LINFO3);
+                
                byte[] data = new byte[len];
+               
                dis.readFully(data);
-               os.writeInt(len + 16);
+               
+               String sUser = this.getUser();
+               
+               logln("UserName " + sUser, LINFO3);
+               
+               os.writeInt(len + 16 + sUser.length() + 2);
+               
                os.writeInt(command);
+               
                os.writeLong(0);  //this is where the updateid will get inserted
+               
+               os.writeUTF(sUser);
+               
                os.write(data);
                //only accept commands if the client is authenticated
-               if (authenticated && (publish > 0)) {
+               
+               if (authenticated && (publish > 0)) 
+               {
                   //only post if this client chose to publish, 
                   //(though they really shouldn't have sent any data if they are not publishing)
-                  if (checkPermissions(command, publish)) { 
+                  if (checkPermissions(command, publish)) 
+                  { 
                      logln("posting command " + command + " (allowed to  publish) ", LDEBUG);
                      cm.post(this, command, os.toByteArray());
                   }
-                  else {
+                  else 
+                  {
                      logln("not allowed to perform command: " + command, LINFO);
                          // if (errorAlreadySentMask
                          // send_error("you are not allowed to byte patch");
@@ -399,23 +430,28 @@ public class Client extends Thread implements CollabreateConstants {
                          // logln("sent errors is " + errorAlreadySentMask);
                   }
                }
-               else {
+               else 
+               {
                   logln("Client " + hash + ":" + conn.getInetAddress().getHostAddress()
                                      + ":" + conn.getPort() + " skipping post command.", LINFO);
                }
             }
             else { //server only command
-               switch (command) {
-                  case MSG_PROJECT_NEW_REQUEST: {
+               switch (command) 
+               {
+                  case MSG_PROJECT_NEW_REQUEST: 
+                  {
                      logln("in NEW PROJECT REQUEST", LDEBUG);
                      byte[] md5 = new byte[MD5_SIZE];
-                     try {
+                     try 
+                     {
                         dis.readFully(md5);
                         hash = Utils.toHexString(md5);
                         String desc = dis.readUTF();
                         long pub = dis.readLong() & 0x7FFFFFFF;
                         long sub = dis.readLong() & 0x7FFFFFFF;
-                        if (!authenticated) {
+                        if (!authenticated) 
+                        {
                            //nice try!!
                            break;
                         }
@@ -438,7 +474,8 @@ public class Client extends Thread implements CollabreateConstants {
                      }
                      break;
                   }
-                  case MSG_PROJECT_JOIN_REQUEST: {
+                  case MSG_PROJECT_JOIN_REQUEST: 
+                  {
                      int lpid = dis.readInt();
                      long tpub = dis.readLong() & 0x7FFFFFFF;
                      long tsub = dis.readLong() & 0x7FFFFFFF; 
@@ -463,7 +500,9 @@ public class Client extends Thread implements CollabreateConstants {
                      send_data(MSG_PROJECT_JOIN_REPLY, os.toByteArray());
                      break;               
                   }
-                  case MSG_PROJECT_REJOIN_REQUEST: {
+                  
+                  case MSG_PROJECT_REJOIN_REQUEST: 
+                  {
                      logln("in PROJECT_REJOIN_REQUEST", LDEBUG);
                      byte gp[] = new byte[GPID_SIZE];
                      int rejoingbasic = 0;
@@ -506,7 +545,9 @@ public class Client extends Thread implements CollabreateConstants {
                      }
                      break;               
                   }
-                  case MSG_PROJECT_SNAPSHOT_REQUEST: {
+                  
+                  case MSG_PROJECT_SNAPSHOT_REQUEST: 
+                  {
                      logln("in SNAPSHOT REQ", LDEBUG);
                      String desc = dis.readUTF();
                      long lastupdateid = dis.readLong();
@@ -533,7 +574,9 @@ public class Client extends Thread implements CollabreateConstants {
                      send_data(MSG_PROJECT_SNAPSHOT_REPLY, os.toByteArray());
                      break;
                   }
-                  case MSG_PROJECT_FORK_REQUEST: {
+                  
+                  case MSG_PROJECT_FORK_REQUEST: 
+                  {
                      long lastupdateid = dis.readLong();
                      String desc = dis.readUTF();
                      logln("in FORK REQUEST", LDEBUG);
@@ -551,18 +594,22 @@ public class Client extends Thread implements CollabreateConstants {
                      //long pub = dis.readLong() & 0x7FFFFFFF;
                      //long sub = dis.readLong() & 0x7FFFFFFF;
                      //if (cm.forkProject(this, lastupdateid, desc, pub, sub) >= 0) { 
-                     if (cm.forkProject(this, lastupdateid, desc) >= 0) { 
+                     if (cm.forkProject(this, lastupdateid, desc) >= 0) 
+                     { 
                         //on successfull fork, join the 'new' project automatically
                         os.writeInt(JOIN_REPLY_SUCCESS);
                         os.write(Utils.toByteArray(gpid));
                      }
-                     else {
+                     else 
+                     {
                         os.writeInt(JOIN_REPLY_FAIL);
                      }
                      send_data(MSG_PROJECT_JOIN_REPLY, os.toByteArray());
                      break;
                   }
-                  case MSG_PROJECT_SNAPFORK_REQUEST: {
+                  
+                  case MSG_PROJECT_SNAPFORK_REQUEST: 
+                  {
                      logln("in SNAPFORK REQUEST", LDEBUG);
                      int lpid = dis.readInt();
                      String desc = dis.readUTF();
@@ -587,7 +634,9 @@ public class Client extends Thread implements CollabreateConstants {
                      send_data(MSG_PROJECT_JOIN_REPLY, os.toByteArray());
                      break;
                   }
-                  case MSG_PROJECT_LEAVE: {
+                  
+                  case MSG_PROJECT_LEAVE: 
+                  {
                      logln("in PROJECT LEAVE", LDEBUG);
                      if (!authenticated) {
                         logln("unauthorized project leave request", LERROR);
@@ -597,8 +646,10 @@ public class Client extends Thread implements CollabreateConstants {
                      cm.remove(this);
                      break;
                   }
+                  
                   case MSG_PROJECT_JOIN_REPLY:                 
                      break;
+                     
                   case MSG_AUTH_REQUEST:
                      logln("in AUTH REQUEST", LDEBUG);
                      int pluginversion = dis.readInt();
@@ -640,13 +691,16 @@ public class Client extends Thread implements CollabreateConstants {
                         send_error("Attempt to Authenticate, when already authenticated");
                      }                     
                      break;
+                     
                   case MSG_PROJECT_LIST:
                      if (len != MD5_SIZE) { //len + cmd alread accounted for
                         send_error("Malformed Project getlist request");
                      }
-                     else {
+                     else 
+                     {
                         byte[] md5 = new byte[MD5_SIZE];
-                        try {
+                        try 
+                        {
                            dis.readFully(md5);
                         } catch (Exception ex) {
                            logln("Malformed MSG_PROJECT_LIST - failed to read file md5", LERROR);
@@ -699,18 +753,25 @@ public class Client extends Thread implements CollabreateConstants {
                         send_data(MSG_PROJECT_LIST, os.toByteArray());
                      }
                      break;
-                  case MSG_SEND_UPDATES: {
+                     
+                  case MSG_SEND_UPDATES: 
+                  {
                      long lastupdate = dis.readLong();
-                     if (!authenticated) {
+                     
+                     if (!authenticated) 
+                     {
                         //nice try!!
                         break;
                      }
+                     
                      logln("Received SEND_UPDATES request for " + lastupdate + " to current", LINFO1);
                      cm.sendLatestUpdates(this, lastupdate);
                         
                      break;
                   }
-                  case MSG_SET_REQ_PERMS: {
+                  
+                  case MSG_SET_REQ_PERMS: 
+                  {
                      logln("Received SET_REQ_PERMS request", LINFO1);
                      long tpub = dis.readLong() & 0x7FFFFFFF;
                      long tsub = dis.readLong() & 0x7FFFFFFF;
@@ -745,7 +806,9 @@ public class Client extends Thread implements CollabreateConstants {
 
                      break;
                   }
-                  case MSG_GET_REQ_PERMS: {
+                  
+                  case MSG_GET_REQ_PERMS: 
+				  {
                      logln("Received GET_REQ_PERMS request", LINFO1);
                      if (!authenticated) {
                         logln("unauthorized get req perms request",LERROR);
@@ -767,6 +830,7 @@ public class Client extends Thread implements CollabreateConstants {
                      send_data(MSG_GET_REQ_PERMS_REPLY, os.toByteArray());
                      break;
                   }
+                  
                   case MSG_GET_PROJ_PERMS: {
                      logln("Received GET_PROJ_PERMS request", LINFO1);
                      if (!authenticated) {
@@ -794,6 +858,7 @@ public class Client extends Thread implements CollabreateConstants {
                      }
                      break;
                   }
+                  
                   case MSG_SET_PROJ_PERMS: {
                      logln("Received SET_PROJ_PERMS request", LINFO1);
                      long pub = dis.readLong() & 0x7FFFFFFF;

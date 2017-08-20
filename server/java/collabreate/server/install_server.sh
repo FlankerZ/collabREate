@@ -9,7 +9,7 @@ OPTIONS="Yes No"
 if [ -x "/sbin/runuser" ]; then
     SU="/sbin/runuser"
 else
-    SU="su"
+    SU=""
 fi
 
 echo "this script will install the collabreate server."
