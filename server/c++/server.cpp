@@ -74,6 +74,7 @@ void sigchld(int sig) {
  * the client thread crashes, the entire server crashes.
  */
 void loop(NetworkService *svc) {
+	printf("loop\r\n");
    //should choose between Basic and Database connection managers here
    DatabaseConnectionManager mgr(conf);
    mgr.start();
@@ -201,7 +202,9 @@ int main(int argc, char **argv, char **envp) {
       }
    }
    short svc_port = getShortOption(conf, "SERVER_PORT", 5042);
+   printf("server_post = %d\r\n", svc_port);
    string svc_host = getStringOption(conf, "SERVER_HOST", "");
+   printf("SERVER_HOST = %s\r\n", svc_host.c_str());
    try {
       if (svc_host.length() == 0) {
          svc = new Tcp6Service(svc_port);
@@ -212,6 +215,7 @@ int main(int argc, char **argv, char **envp) {
    } catch (int e) {
       exit(e);
    }
+   printf("before drop_privs_user \r\n");
    drop_privs_user(svc_user);
    daemon(1, 0);
    writePidFile();

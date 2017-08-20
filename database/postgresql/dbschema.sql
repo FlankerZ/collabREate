@@ -93,7 +93,7 @@ CREATE TABLE forklist (
 --   PRIMARY KEY (userid, project, updates)
 --);
 
-CREATE LANGUAGE plpgsql;
+--CREATE LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION next_project_id() RETURNS integer AS $$
 BEGIN

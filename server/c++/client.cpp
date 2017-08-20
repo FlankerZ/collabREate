@@ -353,6 +353,8 @@ void *Client::run(void *arg) {
    //in here read and write from/to the socket in order
    //to give the service some functionality
    Client *client = (Client*)arg;
+   printf("Client::run \r\n");
+   
    try {
       while (true) {
          Buffer os;
@@ -369,7 +371,12 @@ void *Client::run(void *arg) {
          if (command < MSG_CONTROL_FIRST) {
             uint8_t *data = new uint8_t[len];
             client->conn->readFully(data, len);
-            os.writeInt(len + 16);
+			
+			string sUser = client->getUser();
+			::logln("UserName " + sUser, LINFO3);
+			
+			
+            os.writeInt(len + 16 + sUser.length() + 2);
             os.writeInt(command);
             os.writeLong(0);  //this is where the updateid will get inserted
             os.write(data, len);
